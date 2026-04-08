@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Seagate IronWolf Pro — Canadian Price Tracker with Telegram Alerts
+Seagate IronWolf — Canadian HDD Price Tracker with Telegram Alerts
 ===================================================================
 
-Checks prices every 5 minutes across 5 Canadian stores using a real
+Checks prices every 3 minutes across 6 Canadian stores using a real
 headless browser (Playwright) so JavaScript-rendered prices are captured.
 
 Sends a Telegram message when a drive is in stock AND at or below
@@ -54,51 +54,68 @@ CHECK_INTERVAL_SECONDS = 3 * 60   # 3 minutes
 
 CSV_LOG = "price_history.csv"      # append-only log of every price seen
 
-# Drives to track — only IronWolf Pro, with your target prices (CAD)
+# Drives to track — IronWolf & IronWolf Pro, with target price ranges (CAD)
 DRIVES = [
+    # ── IronWolf Pro ──
+    {
+        "name":       "IronWolf Pro 8TB",
+        "sku":        "ST8000NT001",
+        "capacity":   8,
+        "target_min": 300.00,
+        "target_max": 370.00,
+        "stores": {
+            "Amazon.ca": "https://www.amazon.ca/dp/B0B94M13NH",
+            "Canada Computers": "https://www.canadacomputers.com/en/desktop-internal-hard-drives/239798/seagate-ironwolf-pro-8-tb-hard-drive-st8000nt001.html",
+            "Memory Express": "https://www.memoryexpress.com/Search/Products?Search=ST8000NT001",
+            "Newegg.ca": "https://www.newegg.ca/p/pl?d=ST8000NT001",
+            "Best Buy": "17109667",
+            "CDW Canada": "https://www.cdw.ca/product/seagate-ironwolf-pro-st8000nt001-hard-drive-8-tb-sata-6gb-s/7480662",
+        },
+    },
     {
         "name":       "IronWolf Pro 12TB",
         "sku":        "ST12000NT001",
         "capacity":   12,
-        "target_min": 350.00,
-        "target_max": 480.00,
+        "target_min": 440.00,
+        "target_max": 500.00,
         "stores": {
             "Amazon.ca": "https://www.amazon.ca/dp/B0B94KSFTH",
             "Canada Computers": "https://www.canadacomputers.com/en/desktop-internal-hard-drives/238856/seagate-ironwolf-pro-12tb-hard-drive-3-5-internal-sata-sata-600-st12000nt001.html",
             "Memory Express": "https://www.memoryexpress.com/Products/MX00126780",
             "Newegg.ca": "https://www.newegg.ca/p/pl?d=ST12000NT001",
-            "Best Buy": "https://www.bestbuy.ca/en-ca/product/seagate-ironwolf-pro-12tb-3-5-7200rpm-sata-desktop-internal-hard-drive-st12000ntz01/19186375",
+            "Best Buy": "19186375,17077279",
             "CDW Canada": "https://www.cdw.ca/product/seagate-ironwolf-pro-st12000nt001-hard-drive-12-tb-sata-6gb-s/7509268",
         },
     },
+    # ── IronWolf (Regular) ──
     {
-        "name":       "IronWolf Pro 16TB",
-        "sku":        "ST16000NT001",
-        "capacity":   16,
-        "target_min": 550.00,
-        "target_max": 600.00,
+        "name":       "IronWolf 8TB",
+        "sku":        "ST8000VN004",
+        "capacity":   8,
+        "target_min": 280.00,
+        "target_max": 340.00,
         "stores": {
-            "Amazon.ca": "https://www.amazon.ca/dp/B0B94NFYWX",
-            "Canada Computers": "https://www.canadacomputers.com/en/desktop-internal-hard-drives/235732/seagate-ironwolf-pro16tb-nas-hard-drive-st16000nt001.html",
-            "Memory Express": "https://www.memoryexpress.com/Products/MX00124956",
-            "Newegg.ca": "https://www.newegg.ca/p/pl?d=ST16000NT001",
-            "Best Buy": "https://www.bestbuy.ca/en-ca/product/seagate-ironwolf-pro-16tb-3-5-7200rpm-sata-desktop-internal-hard-drive-st16000ntz01/19186376",
-            "CDW Canada": "https://www.cdw.ca/product/seagate-ironwolf-pro-st16000nt001-hard-drive-16-tb-sata-6gb-s/7582465",
+            "Amazon.ca": "https://www.amazon.ca/dp/B084ZV4DXB",
+            "Canada Computers": "https://www.canadacomputers.com/en/desktop-internal-hard-drives/160801/seagate-ironwolf-8tb-nas-7200rpm-256-mb-st8000vn004.html",
+            "Memory Express": "https://www.memoryexpress.com/Products/MX80662",
+            "Newegg.ca": "https://www.newegg.ca/p/pl?d=ST8000VN004",
+            "Best Buy": "14590652",
+            "CDW Canada": "https://www.cdw.ca/product/seagate-ironwolf-st8000vn004-hard-drive-8-tb-sata-6gb-s/5903591",
         },
     },
     {
-        "name":       "IronWolf Pro 20TB",
-        "sku":        "ST20000NT001",
-        "capacity":   20,
-        "target_min": 680.00,
-        "target_max": 740.00,
+        "name":       "IronWolf 12TB",
+        "sku":        "ST12000VN0008",
+        "capacity":   12,
+        "target_min": 370.00,
+        "target_max": 440.00,
         "stores": {
-            "Amazon.ca": "https://www.amazon.ca/dp/B0B94MF4LP",
-            "Canada Computers": "https://www.canadacomputers.com/en/desktop-internal-hard-drives/236572/seagate-ironwolf-pro-20tb-hard-drive-3-5-internal-sata-st20000nt001.html",
-            "Memory Express": "https://www.memoryexpress.com/Products/MX00124968",
-            "Newegg.ca": "https://www.newegg.ca/p/pl?d=ST20000NT001",
-            "Best Buy": "https://www.bestbuy.ca/en-ca/product/seagate-ironwolf-pro-20tb-3-5-7200rpm-sata-desktop-internal-hard-drive-st20000ntz01/19186377",
-            "CDW Canada": "https://www.cdw.ca/product/seagate-ironwolf-pro-st20000nt001-hard-drive-20-tb-sata-6gb-s/7502654",
+            "Amazon.ca": "https://www.amazon.ca/dp/B084ZTSMWF",
+            "Canada Computers": "https://www.canadacomputers.com/en/desktop-internal-hard-drives/137535/seagate-ironwolf-12tb-sata6gb-s-256mb-desktop-hard-drives-st12000vn0008.html",
+            "Memory Express": "https://www.memoryexpress.com/Products/MX77890",
+            "Newegg.ca": "https://www.newegg.ca/p/pl?d=ST12000VN0008",
+            "Best Buy": "13800313",
+            "CDW Canada": "https://www.cdw.ca/product/seagate-ironwolf-st12000vn0008-hard-drive-12-tb-sata-6gb-s/5398228",
         },
     },
 ]
@@ -474,37 +491,48 @@ def extract_newegg(page, sku: str = "") -> tuple[Optional[float], bool]:
     return None, False
 
 
-def extract_bestbuy(page, sku: str = "") -> tuple[Optional[float], bool]:
-    """Best Buy Canada — uses public JSON API instead of scraping.
+def extract_bestbuy(product_ids_str: str, sku: str = "") -> tuple[Optional[float], bool, str]:
+    """Best Buy Canada — checks multiple listings via JSON API.
 
-    Best Buy blocks headless browsers, but their JSON API at
-    /api/v2/json/product/{id} returns pricing and stock data directly.
-    The product ID is the last segment of the product page URL.
+    The url field for Best Buy stores contains comma-separated product IDs.
+    We check all listings and return the lowest price.
     """
-    # Extract product ID from the page URL (last path segment)
-    product_id = page.url.rstrip("/").split("/")[-1]
+    best_price = None
+    best_in_stock = False
+    best_url = ""
 
-    api_url = f"https://www.bestbuy.ca/api/v2/json/product/{product_id}"
-    try:
-        req = urllib.request.Request(api_url, headers={
-            "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0",
-        })
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read())
+    for product_id in product_ids_str.split(","):
+        product_id = product_id.strip()
+        api_url = f"https://www.bestbuy.ca/api/v2/json/product/{product_id}"
+        try:
+            req = urllib.request.Request(api_url, headers={
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0",
+            })
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read())
 
-        price = data.get("salePrice") or data.get("regularPrice")
-        if not price or not (50 < price < 5000):
-            return None, False
+            price = data.get("salePrice") or data.get("regularPrice")
+            if not price or not (50 < price < 5000):
+                continue
 
-        avail = data.get("availability", {})
-        in_stock = avail.get("onlineAvailability") not in (
-            "SoldOut", "NotAvailable", None
-        )
-        return float(price), in_stock
-    except Exception as e:
-        log.warning(f"    Best Buy API error: {e}")
-        return None, False
+            avail = data.get("availability", {})
+            in_stock = avail.get("onlineAvailability") not in (
+                "SoldOut", "NotAvailable", None
+            )
+
+            # Prefer in-stock listings; among same stock status, pick lowest price
+            if best_price is None or (in_stock and not best_in_stock) or \
+               (in_stock == best_in_stock and price < best_price):
+                best_price = price
+                best_in_stock = in_stock
+                best_url = f"https://www.bestbuy.ca/en-ca/product/{product_id}"
+        except Exception:
+            continue
+
+    if best_price:
+        return float(best_price), best_in_stock, best_url
+    return None, False, ""
 
 
 def extract_cdw(page, sku: str = "") -> tuple[Optional[float], bool]:
@@ -674,9 +702,12 @@ def check_all(browser):
                 continue
 
             try:
+                # Best Buy: API-only, no browser needed
+                if store_name == "Best Buy":
+                    price, in_stock, url = extractor(url, sku=drive["sku"])
                 # Memory Express: fresh browser context per request to
                 # avoid Cloudflare tracking and blocking repeat visits
-                if store_name == "Memory Express":
+                elif store_name == "Memory Express":
                     me_ctx = browser.new_context(
                         user_agent=(
                             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
