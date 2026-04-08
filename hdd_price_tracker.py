@@ -34,6 +34,7 @@ RUN
 import json
 import logging
 import os
+import random
 import re
 import sys
 import time
@@ -67,6 +68,7 @@ DRIVES = [
             "Memory Express": "https://www.memoryexpress.com/Products/MX00126780",
             "Newegg.ca": "https://www.newegg.ca/p/pl?d=ST12000NT001",
             "Best Buy": "https://www.bestbuy.ca/en-ca/product/seagate-ironwolf-pro-12tb-3-5-7200rpm-sata-desktop-internal-hard-drive-st12000ntz01/19186375",
+            "CDW Canada": "https://www.cdw.ca/product/seagate-ironwolf-pro-st12000nt001-hard-drive-12-tb-sata-6gb-s/7509268",
         },
     },
     {
@@ -81,6 +83,7 @@ DRIVES = [
             "Memory Express": "https://www.memoryexpress.com/Products/MX00124956",
             "Newegg.ca": "https://www.newegg.ca/p/pl?d=ST16000NT001",
             "Best Buy": "https://www.bestbuy.ca/en-ca/product/seagate-ironwolf-pro-16tb-3-5-7200rpm-sata-desktop-internal-hard-drive-st16000ntz01/19186376",
+            "CDW Canada": "https://www.cdw.ca/product/seagate-ironwolf-pro-st16000nt001-hard-drive-16-tb-sata-6gb-s/7582465",
         },
     },
     {
@@ -95,6 +98,7 @@ DRIVES = [
             "Memory Express": "https://www.memoryexpress.com/Products/MX00124968",
             "Newegg.ca": "https://www.newegg.ca/p/pl?d=ST20000NT001",
             "Best Buy": "https://www.bestbuy.ca/en-ca/product/seagate-ironwolf-pro-20tb-3-5-7200rpm-sata-desktop-internal-hard-drive-st20000ntz01/19186377",
+            "CDW Canada": "https://www.cdw.ca/product/seagate-ironwolf-pro-st20000nt001-hard-drive-20-tb-sata-6gb-s/7502654",
         },
     },
 ]
@@ -297,9 +301,17 @@ def extract_memoryexpress(page, sku: str = "") -> tuple[Optional[float], bool]:
     """
     url = page.url
 
+    # Random delay to avoid Cloudflare rate-limiting on consecutive requests
+    page.wait_for_timeout(random.randint(2000, 5000))
+
     # ── Direct product page ──
     if "/Products/MX" in url:
-        # Wait for price elements to render (ME uses JS-loaded pricing)
+        # Wait for network to settle and price elements to render
+        try:
+            page.wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
+            pass
+
         price_wait_selectors = [
             ".GrandTotal",
             ".c-capr-pricing__grand-total",
@@ -307,7 +319,7 @@ def extract_memoryexpress(page, sku: str = "") -> tuple[Optional[float], bool]:
         ]
         for ws in price_wait_selectors:
             try:
-                page.wait_for_selector(ws, timeout=5000)
+                page.wait_for_selector(ws, timeout=8000)
                 break
             except Exception:
                 continue
@@ -495,12 +507,138 @@ def extract_bestbuy(page, sku: str = "") -> tuple[Optional[float], bool]:
         return None, False
 
 
+def extract_cdw(page, sku: str = "") -> tuple[Optional[float], bool]:
+    """CDW Canada product page."""
+    # Try JSON-LD first
+    scripts = page.query_selector_all('script[type="application/ld+json"]')
+    for s in scripts:
+        try:
+            data = json.loads(s.inner_text())
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                offers = item.get("offers", {})
+                if isinstance(offers, list):
+                    offers = offers[0] if offers else {}
+                p = offers.get("price")
+                avail = offers.get("availability", "")
+                if p:
+                    in_stock = "InStock" in avail
+                    return float(p), in_stock
+        except (json.JSONDecodeError, ValueError, KeyError, IndexError):
+            continue
+
+    # CSS selectors
+    selectors = [
+        '[class*="price-current"]',
+        '[class*="product-price"]',
+        '[data-testid="price"]',
+        ".price-type-price",
+        ".price",
+    ]
+    for sel in selectors:
+        el = page.query_selector(sel)
+        if el:
+            price = find_price(el.inner_text())
+            if price:
+                body = page.inner_text("body").lower()
+                oos = any(s in body for s in [
+                    "out of stock", "unavailable", "sold out",
+                ])
+                return price, not oos
+
+    # Full page scan
+    body = page.inner_text("body")
+    price = find_price(body)
+    if price:
+        oos = any(s in body.lower() for s in ["out of stock", "unavailable", "sold out"])
+        return price, not oos
+    return None, False
+
+
+def extract_walmart(page, sku: str = "") -> tuple[Optional[float], bool]:
+    """Walmart Canada — extracts price from __NEXT_DATA__ JSON or page."""
+    # Strategy 1: __NEXT_DATA__ JSON blob
+    next_data = page.query_selector('script#__NEXT_DATA__')
+    if next_data:
+        try:
+            data = json.loads(next_data.inner_text())
+            # Navigate the nested structure for price info
+            text = json.dumps(data)
+            for key in ["currentPrice", "price", "minPrice"]:
+                pattern = rf'"{key}"\s*:\s*([\d.]+)'
+                m = re.search(pattern, text)
+                if m:
+                    price = float(m.group(1))
+                    if 50 < price < 5000:
+                        oos = '"OUT_OF_STOCK"' in text or '"NotAvailable"' in text
+                        return price, not oos
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Strategy 2: JSON-LD
+    scripts = page.query_selector_all('script[type="application/ld+json"]')
+    for s in scripts:
+        try:
+            data = json.loads(s.inner_text())
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                offers = item.get("offers", {})
+                if isinstance(offers, list):
+                    offers = offers[0] if offers else {}
+                p = offers.get("price")
+                avail = offers.get("availability", "")
+                if p:
+                    in_stock = "InStock" in avail
+                    return float(p), in_stock
+        except (json.JSONDecodeError, ValueError, KeyError, IndexError):
+            continue
+
+    # Strategy 3: CSS selectors
+    selectors = [
+        '[data-testid="price-wrap"] [itemprop="price"]',
+        '[itemprop="price"]',
+        '[data-automation="buybox-price"]',
+        '[class*="price-characteristic"]',
+    ]
+    for sel in selectors:
+        el = page.query_selector(sel)
+        if el:
+            price = find_price(el.inner_text())
+            if not price:
+                # Walmart sometimes puts price in content attribute
+                content = el.get_attribute("content")
+                if content:
+                    try:
+                        price = float(content)
+                    except ValueError:
+                        pass
+            if price and 50 < price < 5000:
+                body = page.inner_text("body").lower()
+                oos = any(s in body for s in [
+                    "out of stock", "not available", "sold out",
+                ])
+                return price, not oos
+
+    # Strategy 4: Full page scan
+    body = page.inner_text("body")
+    price = find_price(body)
+    if price:
+        oos = any(s in body.lower() for s in ["out of stock", "not available", "sold out"])
+        return price, not oos
+    return None, False
+
+
 EXTRACTORS = {
     "Amazon.ca":         extract_amazon,
     "Canada Computers":  extract_canadacomputers,
     "Memory Express":    extract_memoryexpress,
     "Newegg.ca":         extract_newegg,
     "Best Buy":          extract_bestbuy,
+    "CDW Canada":        extract_cdw,
 }
 
 
@@ -536,9 +674,28 @@ def check_all(browser):
                 continue
 
             try:
-                page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                page.wait_for_timeout(3000)   # let JS render prices
-                price, in_stock = extractor(page, sku=drive["sku"])
+                # Memory Express: fresh browser context per request to
+                # avoid Cloudflare tracking and blocking repeat visits
+                if store_name == "Memory Express":
+                    me_ctx = browser.new_context(
+                        user_agent=(
+                            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            f"Chrome/{random.randint(120, 130)}.0.0.0 Safari/537.36"
+                        ),
+                        locale="en-CA",
+                        timezone_id="America/Toronto",
+                        viewport={"width": random.randint(1200, 1920), "height": random.randint(800, 1080)},
+                    )
+                    me_page = me_ctx.new_page()
+                    me_page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                    me_page.wait_for_timeout(3000)
+                    price, in_stock = extractor(me_page, sku=drive["sku"])
+                    me_ctx.close()
+                else:
+                    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                    page.wait_for_timeout(3000)
+                    price, in_stock = extractor(page, sku=drive["sku"])
             except Exception as e:
                 log.warning(f"    {store_name:22s}  ❌  Error: {e}")
                 log_csv(ts, drive, store_name, None, False, False, url)
@@ -601,11 +758,11 @@ def check_all(browser):
 
 def main():
     print(r"""
-    ╔═══════════════════════════════════════════════════╗
-    ║  Seagate IronWolf Pro — Price Tracker  🇨🇦        ║
-    ║  Amazon · CC · MemEx · Newegg · Best Buy         ║
-    ║  Telegram alerts when price ≤ target & in stock   ║
-    ╚═══════════════════════════════════════════════════╝
+    ╔════════════════════════════════════════════════════════════╗
+    ║  Seagate IronWolf Pro — HDD Price Tracker  🇨🇦             ║
+    ║  Amazon · CC · MemEx · Newegg · Best Buy · CDW            ║
+    ║  Telegram alerts when price is in range & in stock         ║
+    ╚════════════════════════════════════════════════════════════╝
     """)
 
     if "YOUR_" in TELEGRAM_BOT_TOKEN:
@@ -619,7 +776,7 @@ def main():
 
     with sync_playwright() as pw:
         log.info("Launching headless browser...")
-        browser = pw.chromium.launch(headless=True)
+        browser = pw.chromium.launch(headless=True, channel="chrome")
 
         while True:
             try:
