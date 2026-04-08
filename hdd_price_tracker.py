@@ -60,11 +60,11 @@ DRIVES = [
         "sku":        "ST12000NT001",
         "capacity":   12,
         "target_min": 350.00,
-        "target_max": 420.00,
+        "target_max": 480.00,
         "stores": {
-            "Amazon.ca": "https://www.amazon.ca/s?k=ST12000NT001+seagate+ironwolf+pro",
+            "Amazon.ca": "https://www.amazon.ca/dp/B0B94KSFTH",
             "Canada Computers": "https://www.canadacomputers.com/en/desktop-internal-hard-drives/238856/seagate-ironwolf-pro-12tb-hard-drive-3-5-internal-sata-sata-600-st12000nt001.html",
-            "Memory Express": "https://www.memoryexpress.com/Search/Products?Search=ST12000NT001",
+            "Memory Express": "https://www.memoryexpress.com/Products/MX00126780",
             "Newegg.ca": "https://www.newegg.ca/p/pl?d=ST12000NT001",
             "Best Buy": "https://www.bestbuy.ca/en-ca/product/seagate-ironwolf-pro-12tb-3-5-7200rpm-sata-desktop-internal-hard-drive-st12000ntz01/19186375",
         },
@@ -74,7 +74,7 @@ DRIVES = [
         "sku":        "ST16000NT001",
         "capacity":   16,
         "target_min": 550.00,
-        "target_max": 580.00,
+        "target_max": 600.00,
         "stores": {
             "Amazon.ca": "https://www.amazon.ca/dp/B0B94NFYWX",
             "Canada Computers": "https://www.canadacomputers.com/en/desktop-internal-hard-drives/235732/seagate-ironwolf-pro16tb-nas-hard-drive-st16000nt001.html",
@@ -88,11 +88,11 @@ DRIVES = [
         "sku":        "ST20000NT001",
         "capacity":   20,
         "target_min": 680.00,
-        "target_max": 705.00,
+        "target_max": 740.00,
         "stores": {
-            "Amazon.ca": "https://www.amazon.ca/s?k=ST20000NT001+seagate+ironwolf+pro",
+            "Amazon.ca": "https://www.amazon.ca/dp/B0B94MF4LP",
             "Canada Computers": "https://www.canadacomputers.com/en/desktop-internal-hard-drives/236572/seagate-ironwolf-pro-20tb-hard-drive-3-5-internal-sata-st20000nt001.html",
-            "Memory Express": "https://www.memoryexpress.com/Search/Products?Search=ST20000NT001",
+            "Memory Express": "https://www.memoryexpress.com/Products/MX00124968",
             "Newegg.ca": "https://www.newegg.ca/p/pl?d=ST20000NT001",
             "Best Buy": "https://www.bestbuy.ca/en-ca/product/seagate-ironwolf-pro-20tb-3-5-7200rpm-sata-desktop-internal-hard-drive-st20000ntz01/19186377",
         },
@@ -180,33 +180,88 @@ def find_price(text: str) -> Optional[float]:
     return None
 
 
-def extract_amazon(page) -> tuple[Optional[float], bool]:
-    """Amazon.ca — tries several known price containers."""
-    selectors = [
-        "span.a-price > span.a-offscreen",
-        "#corePrice_feature_div .a-offscreen",
-        "#priceblock_ourprice",
-        "#priceblock_dealprice",
-        "#tp_price_block_total_price_ww .a-offscreen",
-        ".a-price .a-offscreen",
-        '[data-a-color="price"] .a-offscreen',
-    ]
-    for sel in selectors:
-        els = page.query_selector_all(sel)
-        for el in els:
-            price = find_price(el.inner_text())
-            if price:
-                # Check out-of-stock
-                body = page.inner_text("body")
-                oos = any(s in body.lower() for s in [
-                    "currently unavailable", "out of stock",
-                    "not available", "see all buying options",
-                ])
-                return price, not oos
+def extract_amazon(page, sku: str = "") -> tuple[Optional[float], bool]:
+    """Amazon.ca — handles both direct product pages and search results.
+
+    For search results, filters by SKU in the product title to avoid
+    picking up the wrong product's price.
+    """
+    url = page.url
+
+    # ── Direct product page (e.g. /dp/B0B94NFYWX) ──
+    if "/dp/" in url or "/gp/product/" in url:
+        selectors = [
+            "#corePrice_feature_div .a-offscreen",
+            "#tp_price_block_total_price_ww .a-offscreen",
+            "#priceblock_ourprice",
+            "#priceblock_dealprice",
+            "span.a-price > span.a-offscreen",
+            ".a-price .a-offscreen",
+            '[data-a-color="price"] .a-offscreen',
+        ]
+        for sel in selectors:
+            els = page.query_selector_all(sel)
+            for el in els:
+                price = find_price(el.inner_text())
+                if price:
+                    body = page.inner_text("body")
+                    oos = any(s in body.lower() for s in [
+                        "currently unavailable", "out of stock",
+                        "not available", "see all buying options",
+                    ])
+                    return price, not oos
+        return None, False
+
+    # ── Search results page ──
+    # Each result card is a div with data-component-type="s-search-result"
+    # and carries a data-asin attribute.
+    result_cards = page.query_selector_all(
+        'div[data-component-type="s-search-result"]'
+    )
+
+    for card in result_cards:
+        # Get the product title from the card
+        title_el = card.query_selector("h2 a span")
+        if not title_el:
+            title_el = card.query_selector("h2 span")
+        title_text = title_el.inner_text().upper() if title_el else ""
+
+        # Filter: the SKU (e.g. ST12000NT001) or key terms must appear
+        # in the title so we don't grab an unrelated product's price.
+        sku_upper = sku.upper()
+        if sku_upper and sku_upper not in title_text:
+            # Also try matching without the "ST" prefix numeric part
+            # e.g. "12TB" for ST12000NT001 → "12"
+            capacity_match = re.search(r"ST(\d+)000", sku_upper)
+            capacity_tb = capacity_match.group(1) + "TB" if capacity_match else ""
+            if not (capacity_tb and capacity_tb in title_text
+                    and "IRONWOLF" in title_text and "PRO" in title_text):
+                continue
+
+        # Extract price from this specific card
+        price_selectors = [
+            "span.a-price > span.a-offscreen",
+            ".a-price .a-offscreen",
+            '[data-a-color="price"] .a-offscreen',
+        ]
+        for sel in price_selectors:
+            els = card.query_selector_all(sel)
+            for el in els:
+                price = find_price(el.inner_text())
+                if price:
+                    # Check stock from card text
+                    card_text = card.inner_text().lower()
+                    oos = any(s in card_text for s in [
+                        "currently unavailable", "out of stock",
+                        "not available",
+                    ])
+                    return price, not oos
+
+    # Fallback: if no card matched by SKU, don't return a random price
     return None, False
 
 
-def extract_canadacomputers(page) -> tuple[Optional[float], bool]:
+def extract_canadacomputers(page, sku: str = "") -> tuple[Optional[float], bool]:
     """Canada Computers product page."""
     selectors = [
         ".price-show strong",
@@ -233,36 +288,155 @@ def extract_canadacomputers(page) -> tuple[Optional[float], bool]:
     return None, False
 
 
-def extract_memoryexpress(page) -> tuple[Optional[float], bool]:
-    """Memory Express product/search page."""
-    selectors = [
-        ".GrandTotal",
-        ".c-capr-pricing__grand-total",
-        ".ProductPrice",
-        "div.IPBH_price",
-        '[class*="Price"]',
+def extract_memoryexpress(page, sku: str = "") -> tuple[Optional[float], bool]:
+    """Memory Express — handles both direct product pages and search results.
+
+    Direct product pages use /Products/MX00xxxxxx and have a clear price
+    element.  Search pages at /Search/Products?Search=... return a grid
+    of product cards that must be filtered by SKU.
+    """
+    url = page.url
+
+    # ── Direct product page ──
+    if "/Products/MX" in url:
+        # Wait for price elements to render (ME uses JS-loaded pricing)
+        price_wait_selectors = [
+            ".GrandTotal",
+            ".c-capr-pricing__grand-total",
+            '[class*="GrandTotal"]',
+        ]
+        for ws in price_wait_selectors:
+            try:
+                page.wait_for_selector(ws, timeout=5000)
+                break
+            except Exception:
+                continue
+
+        selectors = [
+            ".GrandTotal",
+            ".c-capr-pricing__grand-total",
+            '[class*="grand-total"]',
+            '[class*="GrandTotal"]',
+            ".ProductPrice",
+            "div.IPBH_price",
+            '[class*="pricing"] [class*="total"]',
+        ]
+        for sel in selectors:
+            el = page.query_selector(sel)
+            if el:
+                price = find_price(el.inner_text())
+                if price:
+                    body = page.inner_text("body").lower()
+                    oos = any(s in body for s in [
+                        "out of stock", "back order", "not available",
+                        "sold out", "temporarily unavailable",
+                    ])
+                    return price, not oos
+
+        # Fallback: try JSON-LD on product pages
+        scripts = page.query_selector_all('script[type="application/ld+json"]')
+        for s in scripts:
+            try:
+                data = json.loads(s.inner_text())
+                if isinstance(data, dict):
+                    offers = data.get("offers", data)
+                    if isinstance(offers, list):
+                        offers = offers[0] if offers else {}
+                    p = offers.get("price")
+                    if p:
+                        avail = offers.get("availability", "")
+                        in_stock = "InStock" in avail
+                        return float(p), in_stock
+            except (json.JSONDecodeError, ValueError, KeyError, IndexError):
+                continue
+
+        # Last resort for direct pages: scan body
+        body = page.inner_text("body")
+        price = find_price(body)
+        if price:
+            oos = any(s in body.lower() for s in [
+                "out of stock", "back order", "sold out",
+            ])
+            return price, not oos
+        return None, False
+
+    # ── Search results page ──
+    # Memory Express search results show product cards.  We look for
+    # common card container selectors used by their site.
+    card_selectors = [
+        ".c-shca-icon-item",           # shopping cart add item cards
+        '[class*="product-list"] [class*="item"]',
+        ".c-shca-add-product-button",  # known ME class near product links
+        '[class*="search-result"]',
+        ".productResult",
     ]
-    for sel in selectors:
-        el = page.query_selector(sel)
-        if el:
-            price = find_price(el.inner_text())
+
+    # Try to find individual product cards
+    cards = []
+    for cs in card_selectors:
+        cards = page.query_selector_all(cs)
+        if cards:
+            break
+
+    sku_upper = sku.upper()
+
+    if cards:
+        for card in cards:
+            # Walk up to the parent container to get the full product card
+            # The button class is nested; get the ancestor row/card
+            container = card.evaluate_handle(
+                """el => {
+                    // Walk up to find a reasonable container
+                    let node = el;
+                    for (let i = 0; i < 6; i++) {
+                        if (node.parentElement) node = node.parentElement;
+                        // Stop at a div that looks like a product card
+                        let cls = node.className || '';
+                        if (cls.includes('product') || cls.includes('item')
+                            || cls.includes('result') || cls.includes('row')
+                            || node.querySelector('[class*="price"]'))
+                            break;
+                    }
+                    return node;
+                }"""
+            ).as_element()
+            if not container:
+                container = card
+
+            card_text = container.inner_text()
+            card_text_upper = card_text.upper()
+
+            # Filter by SKU in card text
+            if sku_upper and sku_upper not in card_text_upper:
+                capacity_match = re.search(r"ST(\d+)000", sku_upper)
+                capacity_tb = capacity_match.group(1) + "TB" if capacity_match else ""
+                if not (capacity_tb and capacity_tb in card_text_upper
+                        and "IRONWOLF" in card_text_upper):
+                    continue
+
+            # Extract price from this card
+            price = find_price(card_text)
             if price:
-                body = page.inner_text("body").lower()
-                oos = any(s in body.lower() for s in [
-                    "out of stock", "back order", "not available",
-                    "sold out", "temporarily unavailable",
+                card_lower = card_text.lower()
+                oos = any(s in card_lower for s in [
+                    "out of stock", "back order", "sold out",
                 ])
                 return price, not oos
 
+    # Fallback: scan the full page but only if SKU appears on the page
     body = page.inner_text("body")
-    price = find_price(body)
-    if price:
-        oos = any(s in body.lower() for s in ["out of stock", "back order", "sold out"])
-        return price, not oos
+    if sku_upper and sku_upper in body.upper():
+        price = find_price(body)
+        if price:
+            oos = any(s in body.lower() for s in [
+                "out of stock", "back order", "sold out",
+            ])
+            return price, not oos
+
     return None, False
 
 
-def extract_newegg(page) -> tuple[Optional[float], bool]:
+def extract_newegg(page, sku: str = "") -> tuple[Optional[float], bool]:
     """Newegg.ca product/search page."""
     selectors = [
         "li.price-current",
@@ -288,50 +462,37 @@ def extract_newegg(page) -> tuple[Optional[float], bool]:
     return None, False
 
 
-def extract_bestbuy(page) -> tuple[Optional[float], bool]:
-    """Best Buy Canada product page."""
-    # Try JSON-LD first (most reliable)
-    scripts = page.query_selector_all('script[type="application/ld+json"]')
-    for s in scripts:
-        try:
-            data = json.loads(s.inner_text())
-            if isinstance(data, dict):
-                offers = data.get("offers", {})
-                if isinstance(offers, list):
-                    offers = offers[0] if offers else {}
-                p = offers.get("price")
-                avail = offers.get("availability", "")
-                if p:
-                    in_stock = "InStock" in avail or "instock" in avail.lower()
-                    return float(p), in_stock
-        except (json.JSONDecodeError, ValueError, KeyError, IndexError):
-            continue
+def extract_bestbuy(page, sku: str = "") -> tuple[Optional[float], bool]:
+    """Best Buy Canada — uses public JSON API instead of scraping.
 
-    # Fallback: CSS selectors
-    selectors = [
-        '[class*="productPrice"]',
-        '[class*="price_"]',
-        "span[data-automation='product-price']",
-        ".price_FHDfG",
-    ]
-    for sel in selectors:
-        el = page.query_selector(sel)
-        if el:
-            price = find_price(el.inner_text())
-            if price:
-                body = page.inner_text("body").lower()
-                oos = any(s in body for s in [
-                    "sold out", "coming soon", "not available",
-                    "out of stock",
-                ])
-                return price, not oos
+    Best Buy blocks headless browsers, but their JSON API at
+    /api/v2/json/product/{id} returns pricing and stock data directly.
+    The product ID is the last segment of the product page URL.
+    """
+    # Extract product ID from the page URL (last path segment)
+    product_id = page.url.rstrip("/").split("/")[-1]
 
-    body = page.inner_text("body")
-    price = find_price(body)
-    if price:
-        oos = "sold out" in body.lower() or "out of stock" in body.lower()
-        return price, not oos
-    return None, False
+    api_url = f"https://www.bestbuy.ca/api/v2/json/product/{product_id}"
+    try:
+        req = urllib.request.Request(api_url, headers={
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0",
+        })
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+
+        price = data.get("salePrice") or data.get("regularPrice")
+        if not price or not (50 < price < 5000):
+            return None, False
+
+        avail = data.get("availability", {})
+        in_stock = avail.get("onlineAvailability") not in (
+            "SoldOut", "NotAvailable", None
+        )
+        return float(price), in_stock
+    except Exception as e:
+        log.warning(f"    Best Buy API error: {e}")
+        return None, False
 
 
 EXTRACTORS = {
@@ -377,7 +538,7 @@ def check_all(browser):
             try:
                 page.goto(url, wait_until="domcontentloaded", timeout=30000)
                 page.wait_for_timeout(3000)   # let JS render prices
-                price, in_stock = extractor(page)
+                price, in_stock = extractor(page, sku=drive["sku"])
             except Exception as e:
                 log.warning(f"    {store_name:22s}  ❌  Error: {e}")
                 log_csv(ts, drive, store_name, None, False, False, url)
@@ -480,7 +641,10 @@ def main():
                 log.info("\n  Stopped. Goodbye!")
                 break
 
-        browser.close()
+        try:
+            browser.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

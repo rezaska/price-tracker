@@ -1,14 +1,14 @@
-# Seagate IronWolf Pro — Canadian Price Tracker
+# Seagate IronWolf Pro — Canadian HDD Price Tracker
 
-Tracks Seagate IronWolf Pro NAS hard drive prices across 5 Canadian retailers and sends Telegram alerts when prices fall within your target range.
+Tracks Seagate IronWolf Pro HDD prices across 5 Canadian retailers and sends Telegram alerts when prices fall within your target range.
 
 ## Drives Tracked
 
 | Drive | SKU | Target Range (CAD) |
 |-------|-----|--------------------|
-| IronWolf Pro 12TB | ST12000NT001 | $350 – $420 |
-| IronWolf Pro 16TB | ST16000NT001 | $550 – $580 |
-| IronWolf Pro 20TB | ST20000NT001 | $680 – $705 |
+| IronWolf Pro 12TB | ST12000NT001 | $350 – $480 |
+| IronWolf Pro 16TB | ST16000NT001 | $550 – $600 |
+| IronWolf Pro 20TB | ST20000NT001 | $680 – $740 |
 
 ## Stores
 
@@ -48,16 +48,16 @@ export TELEGRAM_BOT_TOKEN="your-token-here"
 export TELEGRAM_CHAT_ID="your-chat-id"
 ```
 
-Or edit them directly in `nas_price_checker.py`.
+Or edit them directly in `hdd_price_tracker.py`.
 
 ## Usage
 
 ```bash
-# Check every 5 minutes (default)
-python nas_price_checker.py
+# Check every 3 minutes (default)
+python hdd_price_tracker.py
 
 # Single check then exit
-python nas_price_checker.py --once
+python hdd_price_tracker.py --once
 ```
 
 ## How It Works
