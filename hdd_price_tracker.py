@@ -62,7 +62,7 @@ DRIVES = [
         "sku":        "ST8000NT001",
         "capacity":   8,
         "target_min": 300.00,
-        "target_max": 370.00,
+        "target_max": 350.00,
         "stores": {
             "Amazon.ca": "https://www.amazon.ca/dp/B0B94M13NH",
             "Canada Computers": "https://www.canadacomputers.com/en/desktop-internal-hard-drives/239798/seagate-ironwolf-pro-8-tb-hard-drive-st8000nt001.html",
@@ -76,8 +76,8 @@ DRIVES = [
         "name":       "IronWolf Pro 12TB",
         "sku":        "ST12000NT001",
         "capacity":   12,
-        "target_min": 440.00,
-        "target_max": 500.00,
+        "target_min": 390.00,
+        "target_max": 460.00,
         "stores": {
             "Amazon.ca": "https://www.amazon.ca/dp/B0B94KSFTH",
             "Canada Computers": "https://www.canadacomputers.com/en/desktop-internal-hard-drives/238856/seagate-ironwolf-pro-12tb-hard-drive-3-5-internal-sata-sata-600-st12000nt001.html",
@@ -92,8 +92,8 @@ DRIVES = [
         "name":       "IronWolf 8TB",
         "sku":        "ST8000VN004",
         "capacity":   8,
-        "target_min": 280.00,
-        "target_max": 340.00,
+        "target_min": 250.00,
+        "target_max": 320.00,
         "stores": {
             "Amazon.ca": "https://www.amazon.ca/dp/B084ZV4DXB",
             "Canada Computers": "https://www.canadacomputers.com/en/desktop-internal-hard-drives/160801/seagate-ironwolf-8tb-nas-7200rpm-256-mb-st8000vn004.html",
@@ -107,8 +107,8 @@ DRIVES = [
         "name":       "IronWolf 12TB",
         "sku":        "ST12000VN0008",
         "capacity":   12,
-        "target_min": 370.00,
-        "target_max": 440.00,
+        "target_min": 350.00,
+        "target_max": 400.00,
         "stores": {
             "Amazon.ca": "https://www.amazon.ca/dp/B084ZTSMWF",
             "Canada Computers": "https://www.canadacomputers.com/en/desktop-internal-hard-drives/137535/seagate-ironwolf-12tb-sata6gb-s-256mb-desktop-hard-drives-st12000vn0008.html",
