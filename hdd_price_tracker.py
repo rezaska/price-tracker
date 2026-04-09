@@ -103,6 +103,50 @@ DRIVES = [
             "CDW Canada": "https://www.cdw.ca/product/seagate-ironwolf-st8000vn004-hard-drive-8-tb-sata-6gb-s/5903591",
         },
     },
+    # ── Seagate Exos (Enterprise, SATA) ──
+    {
+        "name":       "Exos 8TB",
+        "sku":        "ST8000NM017B",
+        "capacity":   8,
+        "target_min": 270.00,
+        "target_max": 340.00,
+        "stores": {
+            "Amazon.ca": "https://www.amazon.ca/dp/B09FH857LY",
+            "Memory Express": "https://www.memoryexpress.com/Search/Products?Search=ST8000NM017B",
+            "Newegg.ca": "https://www.newegg.ca/p/pl?d=ST8000NM017B",
+            "CDW Canada": "https://www.cdw.ca/product/seagate-exos-7e10-st8000nm017b-hard-drive-8-tb-sata-6gb-s/7218918",
+        },
+    },
+    {
+        "name":       "Exos 10TB",
+        "sku":        "ST10000NM001G",
+        "capacity":   10,
+        "target_min": 340.00,
+        "target_max": 420.00,
+        "stores": {
+            "Amazon.ca": "https://www.amazon.ca/dp/B086K3R7FS",
+            "Canada Computers": "https://www.canadacomputers.com/product_info.php?cPath=38_507&item_id=195387",
+            "Memory Express": "https://www.memoryexpress.com/Products/MX00116008",
+            "Newegg.ca": "https://www.newegg.ca/p/pl?d=ST10000NM001G",
+            "Best Buy": "18162264",
+            "CDW Canada": "https://www.cdw.ca/product/seagate-exos-7e10-st10000nm017b-hard-drive-10-tb-sata-6gb-s/7722505",
+        },
+    },
+    {
+        "name":       "Exos 12TB",
+        "sku":        "ST12000NM001G",
+        "capacity":   12,
+        "target_min": 340.00,
+        "target_max": 430.00,
+        "stores": {
+            "Amazon.ca": "https://www.amazon.ca/dp/B0852BMJ68",
+            "Canada Computers": "https://www.canadacomputers.com/product_info.php?cPath=38_507&item_id=189043",
+            "Memory Express": "https://www.memoryexpress.com/Search/Products?Search=ST12000NM001G",
+            "Newegg.ca": "https://www.newegg.ca/p/pl?d=ST12000NM001G",
+            "Best Buy": "16695822",
+            "CDW Canada": "https://www.cdw.ca/product/seagate-exos-x24-st12000nm002h-hard-drive-enterprise-12-tb-sata-6gb/8219722",
+        },
+    },
     {
         "name":       "IronWolf 12TB",
         "sku":        "ST12000VN0008",
@@ -201,7 +245,57 @@ def find_price(text: str) -> Optional[float]:
     return None
 
 
-def extract_amazon(page, sku: str = "") -> tuple[Optional[float], bool]:
+def check_stock_status(page) -> str:
+    """Determine stock status from page content.
+
+    Returns:
+        "in_stock"  — available for immediate purchase
+        "backorder" — out of stock but can still order
+        "oos"       — cannot order
+    """
+    body = page.inner_text("body").lower()
+
+    # Check for add-to-cart / order buttons (indicates orderable)
+    order_buttons = page.query_selector_all(
+        'button, [class*="add-to-cart"], [class*="addToCart"], '
+        '[class*="btn-cart"], input[value*="Add to Cart"], '
+        '[class*="back-order"], [class*="backorder"], '
+        '[data-testid*="add-to-cart"]'
+    )
+    has_order_button = False
+    for btn in order_buttons:
+        btn_text = btn.inner_text().lower().strip()
+        if any(t in btn_text for t in [
+            "add to cart", "back order", "backorder",
+            "pre-order", "preorder", "buy now",
+        ]):
+            has_order_button = True
+            break
+
+    # Check for explicit OOS indicators
+    oos_phrases = [
+        "out of stock", "sold out", "currently unavailable",
+        "not available", "temporarily unavailable",
+        "discontinued", "no longer available",
+    ]
+    has_oos_text = any(phrase in body for phrase in oos_phrases)
+
+    # Check for backorder indicators
+    backorder_phrases = [
+        "back order", "backorder", "pre-order", "preorder",
+        "ships when available", "order now",
+    ]
+    has_backorder_text = any(phrase in body for phrase in backorder_phrases)
+
+    if not has_oos_text:
+        return "in_stock"
+    elif has_order_button or has_backorder_text:
+        return "backorder"
+    else:
+        return "oos"
+
+
+def extract_amazon(page, sku: str = "") -> tuple[Optional[float], str]:
     """Amazon.ca — handles both direct product pages and search results.
 
     For search results, filters by SKU in the product title to avoid
@@ -225,13 +319,8 @@ def extract_amazon(page, sku: str = "") -> tuple[Optional[float], bool]:
             for el in els:
                 price = find_price(el.inner_text())
                 if price:
-                    body = page.inner_text("body")
-                    oos = any(s in body.lower() for s in [
-                        "currently unavailable", "out of stock",
-                        "not available", "see all buying options",
-                    ])
-                    return price, not oos
-        return None, False
+                    return price, check_stock_status(page)
+        return None, "oos"
 
     # ── Search results page ──
     # Each result card is a div with data-component-type="s-search-result"
@@ -270,19 +359,13 @@ def extract_amazon(page, sku: str = "") -> tuple[Optional[float], bool]:
             for el in els:
                 price = find_price(el.inner_text())
                 if price:
-                    # Check stock from card text
-                    card_text = card.inner_text().lower()
-                    oos = any(s in card_text for s in [
-                        "currently unavailable", "out of stock",
-                        "not available",
-                    ])
-                    return price, not oos
+                    return price, check_stock_status(page)
 
     # Fallback: if no card matched by SKU, don't return a random price
-    return None, False
+    return None, "oos"
 
 
-def extract_canadacomputers(page, sku: str = "") -> tuple[Optional[float], bool]:
+def extract_canadacomputers(page, sku: str = "") -> tuple[Optional[float], str]:
     """Canada Computers product page."""
     selectors = [
         ".price-show strong",
@@ -296,20 +379,17 @@ def extract_canadacomputers(page, sku: str = "") -> tuple[Optional[float], bool]
         if el:
             price = find_price(el.inner_text())
             if price:
-                body = page.inner_text("body").lower()
-                oos = "out of stock" in body or "not available" in body or "sold out" in body
-                return price, not oos
+                return price, check_stock_status(page)
 
     # Fallback: scan whole page
     body = page.inner_text("body")
     price = find_price(body)
     if price:
-        oos = any(s in body.lower() for s in ["out of stock", "not available", "sold out"])
-        return price, not oos
-    return None, False
+        return price, check_stock_status(page)
+    return None, "oos"
 
 
-def extract_memoryexpress(page, sku: str = "") -> tuple[Optional[float], bool]:
+def extract_memoryexpress(page, sku: str = "") -> tuple[Optional[float], str]:
     """Memory Express — handles both direct product pages and search results.
 
     Direct product pages use /Products/MX00xxxxxx and have a clear price
@@ -355,12 +435,7 @@ def extract_memoryexpress(page, sku: str = "") -> tuple[Optional[float], bool]:
             if el:
                 price = find_price(el.inner_text())
                 if price:
-                    body = page.inner_text("body").lower()
-                    oos = any(s in body for s in [
-                        "out of stock", "back order", "not available",
-                        "sold out", "temporarily unavailable",
-                    ])
-                    return price, not oos
+                    return price, check_stock_status(page)
 
         # Fallback: try JSON-LD on product pages
         scripts = page.query_selector_all('script[type="application/ld+json"]')
@@ -373,9 +448,7 @@ def extract_memoryexpress(page, sku: str = "") -> tuple[Optional[float], bool]:
                         offers = offers[0] if offers else {}
                     p = offers.get("price")
                     if p:
-                        avail = offers.get("availability", "")
-                        in_stock = "InStock" in avail
-                        return float(p), in_stock
+                        return float(p), check_stock_status(page)
             except (json.JSONDecodeError, ValueError, KeyError, IndexError):
                 continue
 
@@ -383,11 +456,8 @@ def extract_memoryexpress(page, sku: str = "") -> tuple[Optional[float], bool]:
         body = page.inner_text("body")
         price = find_price(body)
         if price:
-            oos = any(s in body.lower() for s in [
-                "out of stock", "back order", "sold out",
-            ])
-            return price, not oos
-        return None, False
+            return price, check_stock_status(page)
+        return None, "oos"
 
     # ── Search results page ──
     # Memory Express search results show product cards.  We look for
@@ -446,26 +516,19 @@ def extract_memoryexpress(page, sku: str = "") -> tuple[Optional[float], bool]:
             # Extract price from this card
             price = find_price(card_text)
             if price:
-                card_lower = card_text.lower()
-                oos = any(s in card_lower for s in [
-                    "out of stock", "back order", "sold out",
-                ])
-                return price, not oos
+                return price, check_stock_status(page)
 
     # Fallback: scan the full page but only if SKU appears on the page
     body = page.inner_text("body")
     if sku_upper and sku_upper in body.upper():
         price = find_price(body)
         if price:
-            oos = any(s in body.lower() for s in [
-                "out of stock", "back order", "sold out",
-            ])
-            return price, not oos
+            return price, check_stock_status(page)
 
-    return None, False
+    return None, "oos"
 
 
-def extract_newegg(page, sku: str = "") -> tuple[Optional[float], bool]:
+def extract_newegg(page, sku: str = "") -> tuple[Optional[float], str]:
     """Newegg.ca product/search page."""
     selectors = [
         "li.price-current",
@@ -479,27 +542,27 @@ def extract_newegg(page, sku: str = "") -> tuple[Optional[float], bool]:
             text = el.inner_text().strip()
             price = find_price("$" + text if "$" not in text else text)
             if price:
-                body = page.inner_text("body").lower()
-                oos = "out of stock" in body or "sold out" in body
-                return price, not oos
+                return price, check_stock_status(page)
 
     body = page.inner_text("body")
     price = find_price(body)
     if price:
-        oos = "out of stock" in body.lower() or "sold out" in body.lower()
-        return price, not oos
-    return None, False
+        return price, check_stock_status(page)
+    return None, "oos"
 
 
-def extract_bestbuy(product_ids_str: str, sku: str = "") -> tuple[Optional[float], bool, str]:
+def extract_bestbuy(product_ids_str: str, sku: str = "") -> tuple[Optional[float], str, str]:
     """Best Buy Canada — checks multiple listings via JSON API.
 
     The url field for Best Buy stores contains comma-separated product IDs.
     We check all listings and return the lowest price.
     """
     best_price = None
-    best_in_stock = False
+    best_status = "oos"
     best_url = ""
+
+    # Rank: in_stock > backorder > oos
+    status_rank = {"in_stock": 2, "backorder": 1, "oos": 0}
 
     for product_id in product_ids_str.split(","):
         product_id = product_id.strip()
@@ -517,25 +580,32 @@ def extract_bestbuy(product_ids_str: str, sku: str = "") -> tuple[Optional[float
                 continue
 
             avail = data.get("availability", {})
-            in_stock = avail.get("onlineAvailability") not in (
-                "SoldOut", "NotAvailable", None
-            )
+            online = avail.get("onlineAvailability", "")
+            purchasable = data.get("isPurchasable", False)
 
-            # Prefer in-stock listings; among same stock status, pick lowest price
-            if best_price is None or (in_stock and not best_in_stock) or \
-               (in_stock == best_in_stock and price < best_price):
+            if online not in ("SoldOut", "NotAvailable", None) or purchasable:
+                status = "in_stock"
+            elif "PreOrder" in online or "BackOrder" in online or purchasable:
+                status = "backorder"
+            else:
+                status = "oos"
+
+            # Prefer better stock status; among same status, pick lowest price
+            if best_price is None or \
+               status_rank.get(status, 0) > status_rank.get(best_status, 0) or \
+               (status == best_status and price < best_price):
                 best_price = price
-                best_in_stock = in_stock
+                best_status = status
                 best_url = f"https://www.bestbuy.ca/en-ca/product/{product_id}"
         except Exception:
             continue
 
     if best_price:
-        return float(best_price), best_in_stock, best_url
-    return None, False, ""
+        return float(best_price), best_status, best_url
+    return None, "oos", ""
 
 
-def extract_cdw(page, sku: str = "") -> tuple[Optional[float], bool]:
+def extract_cdw(page, sku: str = "") -> tuple[Optional[float], str]:
     """CDW Canada product page."""
     # Try JSON-LD first
     scripts = page.query_selector_all('script[type="application/ld+json"]')
@@ -550,10 +620,8 @@ def extract_cdw(page, sku: str = "") -> tuple[Optional[float], bool]:
                 if isinstance(offers, list):
                     offers = offers[0] if offers else {}
                 p = offers.get("price")
-                avail = offers.get("availability", "")
                 if p:
-                    in_stock = "InStock" in avail
-                    return float(p), in_stock
+                    return float(p), check_stock_status(page)
         except (json.JSONDecodeError, ValueError, KeyError, IndexError):
             continue
 
@@ -570,19 +638,14 @@ def extract_cdw(page, sku: str = "") -> tuple[Optional[float], bool]:
         if el:
             price = find_price(el.inner_text())
             if price:
-                body = page.inner_text("body").lower()
-                oos = any(s in body for s in [
-                    "out of stock", "unavailable", "sold out",
-                ])
-                return price, not oos
+                return price, check_stock_status(page)
 
     # Full page scan
     body = page.inner_text("body")
     price = find_price(body)
     if price:
-        oos = any(s in body.lower() for s in ["out of stock", "unavailable", "sold out"])
-        return price, not oos
-    return None, False
+        return price, check_stock_status(page)
+    return None, "oos"
 
 
 def extract_walmart(page, sku: str = "") -> tuple[Optional[float], bool]:
@@ -704,7 +767,7 @@ def check_all(browser):
             try:
                 # Best Buy: API-only, no browser needed
                 if store_name == "Best Buy":
-                    price, in_stock, url = extractor(url, sku=drive["sku"])
+                    price, stock_status, url = extractor(url, sku=drive["sku"])
                 # Memory Express: fresh browser context per request to
                 # avoid Cloudflare tracking and blocking repeat visits
                 elif store_name == "Memory Express":
@@ -721,37 +784,41 @@ def check_all(browser):
                     me_page = me_ctx.new_page()
                     me_page.goto(url, wait_until="domcontentloaded", timeout=30000)
                     me_page.wait_for_timeout(3000)
-                    price, in_stock = extractor(me_page, sku=drive["sku"])
+                    price, stock_status = extractor(me_page, sku=drive["sku"])
                     me_ctx.close()
                 else:
                     page.goto(url, wait_until="domcontentloaded", timeout=30000)
                     page.wait_for_timeout(3000)
-                    price, in_stock = extractor(page, sku=drive["sku"])
+                    price, stock_status = extractor(page, sku=drive["sku"])
             except Exception as e:
                 log.warning(f"    {store_name:22s}  ❌  Error: {e}")
-                log_csv(ts, drive, store_name, None, False, False, url)
+                log_csv(ts, drive, store_name, None, "oos", False, url)
                 continue
 
             if price is None:
                 log.info(f"    {store_name:22s}  —   price not found")
-                log_csv(ts, drive, store_name, None, False, False, url)
+                log_csv(ts, drive, store_name, None, "oos", False, url)
                 continue
 
             meets = drive["target_min"] <= price <= drive["target_max"]
-            stock_icon = "✅" if in_stock else "⛔"
+            orderable = stock_status in ("in_stock", "backorder")
+            stock_icons = {"in_stock": "✅", "backorder": "📦", "oos": "⛔"}
+            stock_labels = {"in_stock": "in stock", "backorder": "backorder", "oos": "OOS"}
+            stock_icon = stock_icons.get(stock_status, "⛔")
+            stock_label = stock_labels.get(stock_status, "OOS")
             price_icon = "🔥" if meets else "  "
             per_tb = price / drive["capacity"]
 
             log.info(
                 f"    {store_name:22s}  "
                 f"CA${price:>7.2f}  (${per_tb:.2f}/TB)  "
-                f"{stock_icon} {'in stock' if in_stock else 'OOS'}  "
+                f"{stock_icon} {stock_label}  "
                 f"{price_icon}"
             )
 
-            log_csv(ts, drive, store_name, price, in_stock, meets, url)
+            log_csv(ts, drive, store_name, price, stock_status, meets, url)
 
-            if meets and in_stock:
+            if meets and orderable:
                 alerts.append({
                     "drive": drive["name"],
                     "store": store_name,
@@ -759,6 +826,7 @@ def check_all(browser):
                     "per_tb": per_tb,
                     "target_min": drive["target_min"],
                     "target_max": drive["target_max"],
+                    "stock_status": stock_status,
                     "url": url,
                 })
 
@@ -766,11 +834,12 @@ def check_all(browser):
 
     # ── Send Telegram alerts ──
     if alerts:
-        lines = ["🔥 <b>NAS Drive Price Alert!</b>\n"]
+        lines = ["🔥 <b>HDD Price Alert!</b>\n"]
         for a in alerts:
+            status_note = " (backorder)" if a["stock_status"] == "backorder" else ""
             lines.append(
                 f"<b>{a['drive']}</b>\n"
-                f"  Store: {a['store']}\n"
+                f"  Store: {a['store']}{status_note}\n"
                 f"  Price: <b>CA${a['price']:.2f}</b>  "
                 f"(${a['per_tb']:.2f}/TB)\n"
                 f"  Target: CA${a['target_min']:.2f} – ${a['target_max']:.2f}\n"
@@ -790,7 +859,7 @@ def check_all(browser):
 def main():
     print(r"""
     ╔════════════════════════════════════════════════════════════╗
-    ║  Seagate IronWolf Pro — HDD Price Tracker  🇨🇦             ║
+    ║  Seagate IronWolf & Exos — HDD Price Tracker  🇨🇦          ║
     ║  Amazon · CC · MemEx · Newegg · Best Buy · CDW            ║
     ║  Telegram alerts when price is in range & in stock         ║
     ╚════════════════════════════════════════════════════════════╝
