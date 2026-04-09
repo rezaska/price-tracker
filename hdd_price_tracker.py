@@ -283,10 +283,28 @@ def check_stock_status(page) -> str:
 
     if not has_oos_text:
         return "in_stock"
-    elif has_order_button or has_backorder_text:
+    elif has_order_button and has_backorder_text:
         return "backorder"
     else:
         return "oos"
+
+
+def check_amazon_stock(page) -> str:
+    """Amazon-specific stock status using availability div."""
+    avail_el = page.query_selector("#availability")
+    if not avail_el:
+        return check_stock_status(page)
+    text = avail_el.inner_text().lower().strip()
+
+    oos_phrases = ["currently unavailable", "out of stock", "not available"]
+    if any(p in text for p in oos_phrases):
+        # Check if there's still an add-to-cart button for backorder
+        cart_btn = page.query_selector("#add-to-cart-button")
+        backorder_phrases = ["back order", "backorder", "pre-order", "ships when available"]
+        if cart_btn and any(p in text for p in backorder_phrases):
+            return "backorder"
+        return "oos"
+    return "in_stock"
 
 
 def extract_amazon(page, sku: str = "") -> tuple[Optional[float], str]:
@@ -313,7 +331,7 @@ def extract_amazon(page, sku: str = "") -> tuple[Optional[float], str]:
             for el in els:
                 price = find_price(el.inner_text())
                 if price:
-                    return price, check_stock_status(page)
+                    return price, check_amazon_stock(page)
         return None, "oos"
 
     # ── Search results page ──
@@ -353,7 +371,7 @@ def extract_amazon(page, sku: str = "") -> tuple[Optional[float], str]:
             for el in els:
                 price = find_price(el.inner_text())
                 if price:
-                    return price, check_stock_status(page)
+                    return price, check_amazon_stock(page)
 
     # Fallback: if no card matched by SKU, don't return a random price
     return None, "oos"
@@ -522,8 +540,52 @@ def extract_memoryexpress(page, sku: str = "") -> tuple[Optional[float], str]:
     return None, "oos"
 
 
+def check_newegg_stock(page, item_container=None) -> str:
+    """Newegg-specific stock status.
+
+    If item_container is given (search result card), checks within that
+    element.  Otherwise falls back to page-level check.
+    """
+    scope = item_container or page
+    scope_text = scope.inner_text("body" if item_container is None else "self").lower() if item_container is None else scope.inner_text().lower()
+
+    # Check for a real add-to-cart button within scope
+    cart_btn = scope.query_selector('.btn-primary, [class*="add-to-cart"], button.aCart')
+    has_cart = False
+    if cart_btn:
+        btn_text = cart_btn.inner_text().lower().strip()
+        has_cart = any(t in btn_text for t in ["add to cart", "buy now"])
+
+    oos_phrases = ["out of stock", "sold out", "currently unavailable"]
+    has_oos = any(p in scope_text for p in oos_phrases)
+
+    backorder_phrases = ["back order", "backorder", "pre-order"]
+    has_backorder = any(p in scope_text for p in backorder_phrases)
+
+    if not has_oos:
+        return "in_stock"
+    elif has_cart and has_backorder:
+        return "backorder"
+    else:
+        return "oos"
+
+
 def extract_newegg(page, sku: str = "") -> tuple[Optional[float], str]:
     """Newegg.ca product/search page."""
+    # Try search result items first — scope stock check to the matching item
+    items = page.query_selector_all('.item-cell, .item-container, [class*="item-cell"]')
+    if items and sku:
+        for item in items:
+            item_text = item.inner_text().upper()
+            if sku.upper() in item_text:
+                price_el = item.query_selector('.price-current, .price-current strong')
+                if price_el:
+                    text = price_el.inner_text().strip()
+                    price = find_price("$" + text if "$" not in text else text)
+                    if price:
+                        return price, check_newegg_stock(page, item)
+
+    # Fallback: page-level price extraction
     selectors = [
         "li.price-current",
         ".price-current strong",
@@ -536,12 +598,12 @@ def extract_newegg(page, sku: str = "") -> tuple[Optional[float], str]:
             text = el.inner_text().strip()
             price = find_price("$" + text if "$" not in text else text)
             if price:
-                return price, check_stock_status(page)
+                return price, check_newegg_stock(page)
 
     body = page.inner_text("body")
     price = find_price(body)
     if price:
-        return price, check_stock_status(page)
+        return price, check_newegg_stock(page)
     return None, "oos"
 
 
