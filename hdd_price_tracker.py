@@ -54,15 +54,15 @@ CHECK_INTERVAL_SECONDS = 3 * 60   # 3 minutes
 
 CSV_LOG = "price_history.csv"      # append-only log of every price seen
 
-# Drives to track — IronWolf & IronWolf Pro, with target price ranges (CAD)
+# Drives to track — alert when price ≤ target (CAD)
+# Standard/Exos: $35/TB, Pro: $40/TB
 DRIVES = [
-    # ── IronWolf Pro ──
+    # ── IronWolf Pro ($40/TB) ──
     {
         "name":       "IronWolf Pro 8TB",
         "sku":        "ST8000NT001",
         "capacity":   8,
-        "target_min": 300.00,
-        "target_max": 350.00,
+        "target":     320.00,
         "stores": {
             "Amazon.ca": "https://www.amazon.ca/dp/B0B94M13NH",
             "Canada Computers": "https://www.canadacomputers.com/en/desktop-internal-hard-drives/239798/seagate-ironwolf-pro-8-tb-hard-drive-st8000nt001.html",
@@ -76,8 +76,7 @@ DRIVES = [
         "name":       "IronWolf Pro 12TB",
         "sku":        "ST12000NT001",
         "capacity":   12,
-        "target_min": 390.00,
-        "target_max": 460.00,
+        "target":     480.00,
         "stores": {
             "Amazon.ca": "https://www.amazon.ca/dp/B0B94KSFTH",
             "Canada Computers": "https://www.canadacomputers.com/en/desktop-internal-hard-drives/238856/seagate-ironwolf-pro-12tb-hard-drive-3-5-internal-sata-sata-600-st12000nt001.html",
@@ -87,13 +86,12 @@ DRIVES = [
             "CDW Canada": "https://www.cdw.ca/product/seagate-ironwolf-pro-st12000nt001-hard-drive-12-tb-sata-6gb-s/7509268",
         },
     },
-    # ── IronWolf (Regular) ──
+    # ── IronWolf ($35/TB) ──
     {
         "name":       "IronWolf 8TB",
         "sku":        "ST8000VN004",
         "capacity":   8,
-        "target_min": 250.00,
-        "target_max": 320.00,
+        "target":     280.00,
         "stores": {
             "Amazon.ca": "https://www.amazon.ca/dp/B084ZV4DXB",
             "Canada Computers": "https://www.canadacomputers.com/en/desktop-internal-hard-drives/160801/seagate-ironwolf-8tb-nas-7200rpm-256-mb-st8000vn004.html",
@@ -103,13 +101,12 @@ DRIVES = [
             "CDW Canada": "https://www.cdw.ca/product/seagate-ironwolf-st8000vn004-hard-drive-8-tb-sata-6gb-s/5903591",
         },
     },
-    # ── Seagate Exos (Enterprise, SATA) ──
+    # ── Seagate Exos ($35/TB) ──
     {
         "name":       "Exos 8TB",
         "sku":        "ST8000NM017B",
         "capacity":   8,
-        "target_min": 270.00,
-        "target_max": 340.00,
+        "target":     280.00,
         "stores": {
             "Amazon.ca": "https://www.amazon.ca/dp/B09FH857LY",
             "Memory Express": "https://www.memoryexpress.com/Search/Products?Search=ST8000NM017B",
@@ -121,8 +118,7 @@ DRIVES = [
         "name":       "Exos 10TB",
         "sku":        "ST10000NM001G",
         "capacity":   10,
-        "target_min": 340.00,
-        "target_max": 420.00,
+        "target":     350.00,
         "stores": {
             "Amazon.ca": "https://www.amazon.ca/dp/B086K3R7FS",
             "Canada Computers": "https://www.canadacomputers.com/product_info.php?cPath=38_507&item_id=195387",
@@ -136,8 +132,7 @@ DRIVES = [
         "name":       "Exos 12TB",
         "sku":        "ST12000NM001G",
         "capacity":   12,
-        "target_min": 340.00,
-        "target_max": 430.00,
+        "target":     420.00,
         "stores": {
             "Amazon.ca": "https://www.amazon.ca/dp/B0852BMJ68",
             "Canada Computers": "https://www.canadacomputers.com/product_info.php?cPath=38_507&item_id=189043",
@@ -151,8 +146,7 @@ DRIVES = [
         "name":       "IronWolf 12TB",
         "sku":        "ST12000VN0008",
         "capacity":   12,
-        "target_min": 350.00,
-        "target_max": 400.00,
+        "target":     420.00,
         "stores": {
             "Amazon.ca": "https://www.amazon.ca/dp/B084ZTSMWF",
             "Canada Computers": "https://www.canadacomputers.com/en/desktop-internal-hard-drives/137535/seagate-ironwolf-12tb-sata6gb-s-256mb-desktop-hard-drives-st12000vn0008.html",
@@ -756,7 +750,7 @@ def check_all(browser):
     page = context.new_page()
 
     for drive in DRIVES:
-        log.info(f"\n  🔍 {drive['name']}  (target CA${drive['target_min']:.2f} – ${drive['target_max']:.2f})")
+        log.info(f"\n  🔍 {drive['name']}  (target ≤ CA${drive['target']:.2f})")
         log.info(f"  {'─'*45}")
 
         for store_name, url in drive["stores"].items():
@@ -800,7 +794,7 @@ def check_all(browser):
                 log_csv(ts, drive, store_name, None, "oos", False, url)
                 continue
 
-            meets = drive["target_min"] <= price <= drive["target_max"]
+            meets = price <= drive["target"]
             orderable = stock_status in ("in_stock", "backorder")
             stock_icons = {"in_stock": "✅", "backorder": "📦", "oos": "⛔"}
             stock_labels = {"in_stock": "in stock", "backorder": "backorder", "oos": "OOS"}
@@ -824,8 +818,7 @@ def check_all(browser):
                     "store": store_name,
                     "price": price,
                     "per_tb": per_tb,
-                    "target_min": drive["target_min"],
-                    "target_max": drive["target_max"],
+                    "target": drive["target"],
                     "stock_status": stock_status,
                     "url": url,
                 })
@@ -842,7 +835,7 @@ def check_all(browser):
                 f"  Store: {a['store']}{status_note}\n"
                 f"  Price: <b>CA${a['price']:.2f}</b>  "
                 f"(${a['per_tb']:.2f}/TB)\n"
-                f"  Target: CA${a['target_min']:.2f} – ${a['target_max']:.2f}\n"
+                f"  Target: ≤ CA${a['target']:.2f}\n"
                 f"  <a href=\"{a['url']}\">🛒 Buy now</a>\n"
             )
         msg = "\n".join(lines)
