@@ -50,7 +50,7 @@ from typing import Optional
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8774802130:AAGDu2xeTSxpQjxCZdnQJYLn78aR6lFrx1Y")
 TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID",   "123199076")
 
-CHECK_INTERVAL_SECONDS = 3 * 60   # 3 minutes
+CHECK_INTERVAL_SECONDS = 5 * 60   # 5 minutes
 
 CSV_LOG = "price_history.csv"      # append-only log of every price seen
 
