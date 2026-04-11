@@ -413,14 +413,15 @@ def extract_memoryexpress(page, sku: str = "") -> tuple[Optional[float], str]:
     # Random delay to avoid Cloudflare rate-limiting on consecutive requests
     page.wait_for_timeout(random.randint(2000, 5000))
 
+    # Detect Cloudflare challenge — bail early instead of hanging
+    body_text = page.inner_text("body").lower()
+    if "checking your browser" in body_text or "just a moment" in body_text:
+        log.info(f"      ↳ Cloudflare challenge detected, skipping")
+        return None, "oos"
+
     # ── Direct product page ──
     if "/Products/MX" in url:
-        # Wait for network to settle and price elements to render
-        try:
-            page.wait_for_load_state("networkidle", timeout=10000)
-        except Exception:
-            pass
-
+        # Wait for price elements to render (short timeout to avoid hangs)
         price_wait_selectors = [
             ".GrandTotal",
             ".c-capr-pricing__grand-total",
@@ -428,7 +429,7 @@ def extract_memoryexpress(page, sku: str = "") -> tuple[Optional[float], str]:
         ]
         for ws in price_wait_selectors:
             try:
-                page.wait_for_selector(ws, timeout=8000)
+                page.wait_for_selector(ws, timeout=5000)
                 break
             except Exception:
                 continue
@@ -837,11 +838,14 @@ def check_all(browser):
                         timezone_id="America/Toronto",
                         viewport={"width": random.randint(1200, 1920), "height": random.randint(800, 1080)},
                     )
-                    me_page = me_ctx.new_page()
-                    me_page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                    me_page.wait_for_timeout(3000)
-                    price, stock_status = extractor(me_page, sku=drive["sku"])
-                    me_ctx.close()
+                    try:
+                        me_page = me_ctx.new_page()
+                        me_page.set_default_timeout(15000)  # 15s hard cap on any Playwright call
+                        me_page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                        me_page.wait_for_timeout(3000)
+                        price, stock_status = extractor(me_page, sku=drive["sku"])
+                    finally:
+                        me_ctx.close()
                 else:
                     page.goto(url, wait_until="domcontentloaded", timeout=30000)
                     page.wait_for_timeout(3000)
