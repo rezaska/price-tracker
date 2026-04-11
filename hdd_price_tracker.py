@@ -573,20 +573,27 @@ def check_newegg_stock(page, item_container=None) -> str:
 
 def extract_newegg(page, sku: str = "") -> tuple[Optional[float], str]:
     """Newegg.ca product/search page."""
-    # Try search result items first — scope stock check to the matching item
-    items = page.query_selector_all('.item-cell, .item-container, [class*="item-cell"]')
-    if items and sku:
+    url = page.url
+    is_search = "/p/pl" in url or "d=" in url
+
+    # ── Search results page: only return a price if the SKU matches ──
+    if is_search:
+        items = page.query_selector_all('.item-cell, .item-container, [class*="item-cell"]')
+        sku_upper = sku.upper() if sku else ""
         for item in items:
             item_text = item.inner_text().upper()
-            if sku.upper() in item_text:
-                price_el = item.query_selector('.price-current, .price-current strong')
-                if price_el:
-                    text = price_el.inner_text().strip()
-                    price = find_price("$" + text if "$" not in text else text)
-                    if price:
-                        return price, check_newegg_stock(page, item)
+            if sku_upper and sku_upper not in item_text:
+                continue
+            price_el = item.query_selector('.price-current, .price-current strong')
+            if price_el:
+                text = price_el.inner_text().strip()
+                price = find_price("$" + text if "$" not in text else text)
+                if price:
+                    return price, check_newegg_stock(page, item)
+        # No matching item found on search page — don't grab random prices
+        return None, "oos"
 
-    # Fallback: page-level price extraction
+    # ── Direct product page: page-level price extraction ──
     selectors = [
         "li.price-current",
         ".price-current strong",
