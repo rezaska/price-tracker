@@ -812,7 +812,7 @@ def check_all(browser):
         user_agent=(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/125.0.0.0 Safari/537.36"
+            "Chrome/132.0.0.0 Safari/537.36"
         ),
         locale="en-CA",
         timezone_id="America/Toronto",
@@ -832,27 +832,27 @@ def check_all(browser):
                 # Best Buy: API-only, no browser needed
                 if store_name == "Best Buy":
                     price, stock_status, url = extractor(url, sku=drive["sku"])
-                # Memory Express: fresh browser context per request to
-                # avoid Cloudflare tracking and blocking repeat visits
-                elif store_name == "Memory Express":
-                    me_ctx = browser.new_context(
+                # Amazon / Memory Express: fresh browser context per
+                # request to avoid bot detection and session tracking
+                elif store_name in ("Amazon.ca", "Memory Express"):
+                    fresh_ctx = browser.new_context(
                         user_agent=(
-                            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                             "AppleWebKit/537.36 (KHTML, like Gecko) "
-                            f"Chrome/{random.randint(120, 130)}.0.0.0 Safari/537.36"
+                            f"Chrome/{random.randint(128, 136)}.0.0.0 Safari/537.36"
                         ),
                         locale="en-CA",
                         timezone_id="America/Toronto",
                         viewport={"width": random.randint(1200, 1920), "height": random.randint(800, 1080)},
                     )
                     try:
-                        me_page = me_ctx.new_page()
-                        me_page.set_default_timeout(15000)  # 15s hard cap on any Playwright call
-                        me_page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                        me_page.wait_for_timeout(3000)
-                        price, stock_status = extractor(me_page, sku=drive["sku"])
+                        fresh_page = fresh_ctx.new_page()
+                        fresh_page.set_default_timeout(15000)
+                        fresh_page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                        fresh_page.wait_for_timeout(3000)
+                        price, stock_status = extractor(fresh_page, sku=drive["sku"])
                     finally:
-                        me_ctx.close()
+                        fresh_ctx.close()
                 else:
                     page.goto(url, wait_until="domcontentloaded", timeout=30000)
                     page.wait_for_timeout(3000)
